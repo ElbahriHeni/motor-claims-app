@@ -1,5 +1,5 @@
-import React from 'react';
-import { useNavigate } from 'react-router';
+import React, { useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -25,9 +25,13 @@ interface ClaimDetailsForm {
 
 export default function ClaimDetailsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const claimIdFromUrl = searchParams.get('claimId');
+  const hasLoadedRef = useRef(false);
+
   const { claimData, updateClaimData } = useClaimContext();
 
-  const { register, handleSubmit, setValue } = useForm<ClaimDetailsForm>({
+  const { register, handleSubmit, setValue, watch, reset } = useForm<ClaimDetailsForm>({
     defaultValues: {
       fullName: claimData.fullName || '',
       email: claimData.email || '',
@@ -41,12 +45,64 @@ export default function ClaimDetailsPage() {
     },
   });
 
+  const selectedClaimType = watch('claimType');
+
+  useEffect(() => {
+    if (!claimIdFromUrl || hasLoadedRef.current) return;
+
+    hasLoadedRef.current = true;
+
+    fetch(`${API_URL}/claims/${claimIdFromUrl}`)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error('Failed to load claim');
+        }
+        return res.json();
+      })
+      .then((data) => {
+        console.log('CLAIM DATA:', data);
+
+        const details = data.details;
+        const claim = data.claim;
+
+        if (claim) {
+          updateClaimData({
+            claimId: claim.id,
+            referenceNumber: claim.reference_number,
+            status: claim.status,
+          });
+        }
+
+        if (!details) return;
+
+        const formValues: ClaimDetailsForm = {
+          fullName: details.full_name || '',
+          email: details.email || '',
+          phone: details.phone || '',
+          policyNumber: details.policy_number || '',
+          incidentDate: details.incident_date || '',
+          incidentTime: details.incident_time || '',
+          location: details.location || '',
+          claimType: details.claim_type || '',
+          description: details.description || '',
+        };
+
+        reset(formValues);
+
+        updateClaimData(formValues);
+      })
+      .catch((error) => {
+        console.error('Error loading claim details:', error);
+        alert('Could not load existing claim details.');
+      });
+  }, [claimIdFromUrl, reset]);
+
   const onSubmit = async (data: ClaimDetailsForm) => {
     try {
-      let claimId = claimData.claimId;
+      let claimId = claimIdFromUrl || claimData.claimId;
 
       if (!claimId) {
-        const createResponse = await fetch('http://localhost:5000/claims', {
+        const createResponse = await fetch(`${API_URL}/claims`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -81,7 +137,7 @@ export default function ClaimDetailsPage() {
         throw new Error('Failed to save claim details');
       }
 
-      navigate('/claim/vehicle');
+      navigate(`/claim/vehicle?claimId=${claimId}`);
     } catch (error) {
       console.error('Error saving claim details:', error);
       alert('Could not save claim details. Please try again.');
@@ -181,7 +237,7 @@ export default function ClaimDetailsPage() {
               <div className="space-y-2">
                 <Label htmlFor="claimType">Type of Claim</Label>
                 <Select
-                  defaultValue={claimData.claimType}
+                  value={selectedClaimType || ''}
                   onValueChange={(value) => setValue('claimType', value)}
                 >
                   <SelectTrigger>

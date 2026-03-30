@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Label } from '../components/ui/label';
@@ -7,21 +7,66 @@ import { useClaimContext } from '../context/ClaimContext';
 import { ArrowLeft, ArrowRight, Upload, X, FileText, Image as ImageIcon } from 'lucide-react';
 import { API_URL } from '../config';
 
+type ExistingFile = {
+  id: number;
+  claim_id: number;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  category: string;
+  created_at: string;
+};
+
 export default function UploadDocumentsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const claimIdFromUrl = searchParams.get('claimId');
+  const hasLoadedRef = useRef(false);
+
   const { claimData, updateClaimData } = useClaimContext();
-  
+
   const [photos, setPhotos] = useState<File[]>(claimData.photos || []);
   const [documents, setDocuments] = useState<File[]>(claimData.documents || []);
 
+  const [existingPhotos, setExistingPhotos] = useState<ExistingFile[]>([]);
+  const [existingDocuments, setExistingDocuments] = useState<ExistingFile[]>([]);
+
+  useEffect(() => {
+    if (!claimIdFromUrl || hasLoadedRef.current) return;
+
+    hasLoadedRef.current = true;
+
+    fetch(`${API_URL}/claims/${claimIdFromUrl}`)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error('Failed to load claim documents');
+        }
+        return res.json();
+      })
+      .then((data) => {
+        console.log('DOCUMENTS DATA:', data);
+
+        const docs: ExistingFile[] = data.documents || [];
+
+        const loadedPhotos = docs.filter((doc) => doc.category === 'damage_photo');
+        const loadedDocuments = docs.filter((doc) => doc.category === 'supporting_document');
+
+        setExistingPhotos(loadedPhotos);
+        setExistingDocuments(loadedDocuments);
+      })
+      .catch((error) => {
+        console.error('Error loading existing documents:', error);
+      });
+  }, [claimIdFromUrl]);
+
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    setPhotos([...photos, ...files]);
+    setPhotos((prev) => [...prev, ...files]);
   };
 
   const handleDocumentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    setDocuments([...documents, ...files]);
+    setDocuments((prev) => [...prev, ...files]);
   };
 
   const removePhoto = (index: number) => {
@@ -32,40 +77,53 @@ export default function UploadDocumentsPage() {
     setDocuments(documents.filter((_, i) => i !== index));
   };
 
-const handleContinue = async () => {
-  try {
-    // save locally in context
-    updateClaimData({ photos, documents });
+  const removeExistingPhoto = (id: number) => {
+    setExistingPhotos((prev) => prev.filter((item) => item.id !== id));
+  };
 
-    // 🔴 IMPORTANT: make sure claimId exists
-    if (!claimData.claimId) {
-      alert('Claim ID missing. Please restart the process.');
-      return;
+  const removeExistingDocument = (id: number) => {
+    setExistingDocuments((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleContinue = async () => {
+    try {
+      updateClaimData({ photos, documents });
+
+      const claimId = claimIdFromUrl || claimData.claimId;
+
+      if (!claimId) {
+        alert('Claim ID missing. Please restart the process.');
+        return;
+      }
+
+      await fetch(`${API_URL}/claims/${claimId}/documents`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          photos: [
+            ...existingPhotos.map((f) => f.file_name),
+            ...photos.map((f) => f.name),
+          ],
+          documents: [
+            ...existingDocuments.map((f) => f.file_name),
+            ...documents.map((f) => f.name),
+          ],
+        }),
+      });
+
+      navigate(`/claim/review?claimId=${claimId}`);
+    } catch (err) {
+      console.error(err);
+      alert('Error saving documents');
     }
-
-    // send to backend
-    await fetch(`${API_URL}/claims/${claimData.claimId}/documents`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        photos: photos.map(f => f.name),
-        documents: documents.map(f => f.name)
-      })
-    });
-
-    navigate('/claim/review');
-  } catch (err) {
-    console.error(err);
-    alert('Error saving documents');
-  }
-};
+  };
 
   const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
+    if (!bytes || bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
   };
 
   return (
@@ -77,6 +135,7 @@ const handleContinue = async () => {
             Upload photos of the damage and any supporting documents (all optional)
           </CardDescription>
         </CardHeader>
+
         <CardContent className="space-y-6">
           {/* Photos Section */}
           <div className="space-y-4">
@@ -108,6 +167,38 @@ const handleContinue = async () => {
                 </div>
               </label>
             </div>
+
+            {existingPhotos.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-700">Existing Photos</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {existingPhotos.map((photo) => (
+                    <div
+                      key={photo.id}
+                      className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <ImageIcon className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm text-slate-900 truncate">
+                            {photo.file_name}
+                          </p>
+                          <p className="text-xs text-slate-500">Saved in claim</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeExistingPhoto(photo.id)}
+                        className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {photos.length > 0 && (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -164,6 +255,34 @@ const handleContinue = async () => {
               </label>
             </div>
 
+            {existingDocuments.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-700">Existing Documents</p>
+                {existingDocuments.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm text-slate-900 truncate">{doc.file_name}</p>
+                        <p className="text-xs text-slate-500">Saved in claim</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => removeExistingDocument(doc.id)}
+                      className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {documents.length > 0 && (
               <div className="space-y-2">
                 {documents.map((doc, index) => (
@@ -192,19 +311,19 @@ const handleContinue = async () => {
             )}
           </div>
 
-          {/* Navigation Buttons */}
           <div className="flex gap-3 pt-4">
             <Button
               type="button"
               variant="outline"
-              onClick={() => navigate('/claim/vehicle')}
+              onClick={() => navigate(`/claim/vehicle?claimId=${claimIdFromUrl || claimData.claimId}`)}
               className="flex items-center gap-2"
             >
               <ArrowLeft className="w-4 h-4" />
               Back
             </Button>
-            <Button 
-              onClick={handleContinue} 
+
+            <Button
+              onClick={handleContinue}
               className="flex-1 flex items-center justify-center gap-2"
             >
               Continue

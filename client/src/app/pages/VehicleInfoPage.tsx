@@ -1,5 +1,5 @@
-import React from 'react';
-import { useNavigate } from 'react-router';
+import React, { useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -19,9 +19,13 @@ interface VehicleInfoForm {
 
 export default function VehicleInfoPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const claimIdFromUrl = searchParams.get('claimId');
+  const hasLoadedRef = useRef(false);
+
   const { claimData, updateClaimData } = useClaimContext();
 
-  const { register, handleSubmit } = useForm<VehicleInfoForm>({
+  const { register, handleSubmit, reset } = useForm<VehicleInfoForm>({
     defaultValues: {
       vehicleMake: claimData.vehicleMake || '',
       vehicleModel: claimData.vehicleModel || '',
@@ -31,15 +35,46 @@ export default function VehicleInfoPage() {
     },
   });
 
+  // ✅ LOAD EXISTING VEHICLE DATA (EDIT MODE)
+  useEffect(() => {
+    if (!claimIdFromUrl || hasLoadedRef.current) return;
+
+    hasLoadedRef.current = true;
+
+    fetch(`${API_URL}/claims/${claimIdFromUrl}`)
+      .then(res => res.json())
+      .then(data => {
+        console.log('VEHICLE DATA:', data);
+
+        const vehicle = data.vehicle;
+
+        if (!vehicle) return;
+
+        const formValues: VehicleInfoForm = {
+          vehicleMake: vehicle.vehicle_make || '',
+          vehicleModel: vehicle.vehicle_model || '',
+          vehicleYear: vehicle.vehicle_year || '',
+          licensePlate: vehicle.license_plate || '',
+          vinNumber: vehicle.vin_number || '',
+        };
+
+        reset(formValues);
+
+        updateClaimData(formValues);
+      });
+  }, [claimIdFromUrl, reset]);
+
   const onSubmit = async (data: VehicleInfoForm) => {
     try {
       updateClaimData(data);
 
-      if (!claimData.claimId) {
+      const claimId = claimIdFromUrl || claimData.claimId;
+
+      if (!claimId) {
         throw new Error('No claim ID found');
       }
 
-      const response = await fetch(`${API_URL}/claims/${claimData.claimId}/vehicle`, {
+      const response = await fetch(`${API_URL}/claims/${claimId}/vehicle`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -51,7 +86,8 @@ export default function VehicleInfoPage() {
         throw new Error('Failed to save vehicle info');
       }
 
-      navigate('/claim/upload');
+      // ✅ KEEP claimId IN URL
+      navigate(`/claim/upload?claimId=${claimId}`);
     } catch (error) {
       console.error('Error saving vehicle info:', error);
       alert('Could not save vehicle info. Please try again.');
@@ -69,13 +105,14 @@ export default function VehicleInfoPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+
             <div className="grid md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="vehicleMake">Make</Label>
                 <Input
                   id="vehicleMake"
                   {...register('vehicleMake')}
-                  placeholder="e.g., Toyota, Honda, Ford"
+                  placeholder="e.g., Toyota"
                 />
               </div>
 
@@ -84,7 +121,7 @@ export default function VehicleInfoPage() {
                 <Input
                   id="vehicleModel"
                   {...register('vehicleModel')}
-                  placeholder="e.g., Camry, Civic, F-150"
+                  placeholder="e.g., Camry"
                 />
               </div>
             </div>
@@ -95,8 +132,7 @@ export default function VehicleInfoPage() {
                 <Input
                   id="vehicleYear"
                   {...register('vehicleYear')}
-                  placeholder="e.g., 2020"
-                  maxLength={4}
+                  placeholder="2020"
                 />
               </div>
 
@@ -106,40 +142,35 @@ export default function VehicleInfoPage() {
                   id="licensePlate"
                   {...register('licensePlate')}
                   placeholder="ABC-1234"
-                  className="uppercase"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="vinNumber">VIN Number</Label>
+              <Label htmlFor="vinNumber">VIN</Label>
               <Input
                 id="vinNumber"
                 {...register('vinNumber')}
-                placeholder="1HGBH41JXMN109186"
-                maxLength={17}
-                className="uppercase"
+                placeholder="17-character VIN"
               />
-              <p className="text-xs text-slate-500">
-                The VIN is a 17-character code found on your vehicle registration or dashboard
-              </p>
             </div>
 
             <div className="flex gap-3 pt-4">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => navigate('/claim/details')}
-                className="flex items-center gap-2"
+                onClick={() => navigate(`/claim/details?claimId=${claimIdFromUrl || claimData.claimId}`)}
               >
                 <ArrowLeft className="w-4 h-4" />
                 Back
               </Button>
-              <Button type="submit" className="flex-1 flex items-center justify-center gap-2">
+
+              <Button type="submit" className="flex-1">
                 Continue
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </div>
+
           </form>
         </CardContent>
       </Card>

@@ -142,6 +142,17 @@ async function getFinanceTaskDetails(taskId) {
     };
 }
 
+async function getOpenFinanceTaskForUpdate(client, taskId) {
+    const result = await client.query(
+        `SELECT * FROM finance_tasks
+         WHERE id = $1
+         FOR UPDATE`,
+        [taskId]
+    );
+
+    return result.rows[0] || null;
+}
+
 // Test route
 app.get('/', (req, res) => {
     res.send('Motor Claims API running');
@@ -542,17 +553,17 @@ app.post('/finance/tasks/:taskId/claim', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        const taskResult = await client.query(
-            `SELECT * FROM finance_tasks WHERE id = $1 FOR UPDATE`,
-            [taskId]
-        );
+        const task = await getOpenFinanceTaskForUpdate(client, taskId);
 
-        if (taskResult.rows.length === 0) {
+        if (!task) {
             await client.query('ROLLBACK');
             return res.status(404).send('Task not found');
         }
 
-        const task = taskResult.rows[0];
+        if (task.status === 'COMPLETED') {
+            await client.query('ROLLBACK');
+            return res.status(400).send('Task is already completed');
+        }
 
         if (task.assigned_user_id) {
             await client.query('ROLLBACK');
@@ -566,6 +577,13 @@ app.post('/finance/tasks/:taskId/claim', async (req, res) => {
                  updated_at = NOW()
              WHERE id = $2`,
             [userId, taskId]
+        );
+
+        await client.query(
+            `UPDATE claims
+             SET assigned_finance_user_id = $1
+             WHERE id = $2`,
+            [userId, task.claim_id]
         );
 
         await client.query(
@@ -596,17 +614,17 @@ app.post('/finance/tasks/:taskId/release', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        const taskResult = await client.query(
-            `SELECT * FROM finance_tasks WHERE id = $1 FOR UPDATE`,
-            [taskId]
-        );
+        const task = await getOpenFinanceTaskForUpdate(client, taskId);
 
-        if (taskResult.rows.length === 0) {
+        if (!task) {
             await client.query('ROLLBACK');
             return res.status(404).send('Task not found');
         }
 
-        const task = taskResult.rows[0];
+        if (task.status === 'COMPLETED') {
+            await client.query('ROLLBACK');
+            return res.status(400).send('Task is already completed');
+        }
 
         if (Number(task.assigned_user_id) !== Number(userId)) {
             await client.query('ROLLBACK');
@@ -620,6 +638,13 @@ app.post('/finance/tasks/:taskId/release', async (req, res) => {
                  updated_at = NOW()
              WHERE id = $1`,
             [taskId]
+        );
+
+        await client.query(
+            `UPDATE claims
+             SET assigned_finance_user_id = NULL
+             WHERE id = $1`,
+            [task.claim_id]
         );
 
         await client.query(
@@ -650,14 +675,16 @@ app.post('/finance/tasks/:taskId/assign', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        const taskResult = await client.query(
-            `SELECT * FROM finance_tasks WHERE id = $1 FOR UPDATE`,
-            [taskId]
-        );
+        const task = await getOpenFinanceTaskForUpdate(client, taskId);
 
-        if (taskResult.rows.length === 0) {
+        if (!task) {
             await client.query('ROLLBACK');
             return res.status(404).send('Task not found');
+        }
+
+        if (task.status === 'COMPLETED') {
+            await client.query('ROLLBACK');
+            return res.status(400).send('Task is already completed');
         }
 
         await client.query(
@@ -667,6 +694,13 @@ app.post('/finance/tasks/:taskId/assign', async (req, res) => {
                  updated_at = NOW()
              WHERE id = $2`,
             [assignedUserId, taskId]
+        );
+
+        await client.query(
+            `UPDATE claims
+             SET assigned_finance_user_id = $1
+             WHERE id = $2`,
+            [assignedUserId, task.claim_id]
         );
 
         await client.query(
@@ -682,6 +716,307 @@ app.post('/finance/tasks/:taskId/assign', async (req, res) => {
         await client.query('ROLLBACK');
         console.error(err);
         res.status(500).send('Error assigning task');
+    } finally {
+        client.release();
+    }
+});
+
+// Accept task
+app.post('/finance/tasks/:taskId/accept', async (req, res) => {
+    const { taskId } = req.params;
+    const { userId, comment } = req.body;
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const task = await getOpenFinanceTaskForUpdate(client, taskId);
+
+        if (!task) {
+            await client.query('ROLLBACK');
+            return res.status(404).send('Task not found');
+        }
+
+        if (task.status === 'COMPLETED') {
+            await client.query('ROLLBACK');
+            return res.status(400).send('Task is already completed');
+        }
+
+        if (task.assigned_user_id && Number(task.assigned_user_id) !== Number(userId)) {
+            await client.query('ROLLBACK');
+            return res.status(403).send('Task is assigned to another user');
+        }
+
+        await client.query(
+            `UPDATE finance_tasks
+             SET assigned_user_id = COALESCE(assigned_user_id, $1),
+                 status = 'COMPLETED',
+                 outcome = 'ACCEPTED',
+                 updated_at = NOW(),
+                 completed_at = NOW()
+             WHERE id = $2`,
+            [userId, taskId]
+        );
+
+        await client.query(
+            `UPDATE claims
+             SET status = 'ACCEPTED',
+                 assigned_finance_user_id = COALESCE(assigned_finance_user_id, $1),
+                 decision_by = $1,
+                 decision_at = NOW(),
+                 decision_comment = $2
+             WHERE id = $3`,
+            [userId, comment || null, task.claim_id]
+        );
+
+        await client.query(
+            `INSERT INTO finance_task_history (finance_task_id, action, action_by, comment)
+             VALUES ($1, $2, $3, $4)`,
+            [taskId, 'ACCEPTED', userId, comment || 'Task accepted']
+        );
+
+        await client.query('COMMIT');
+
+        res.json({ message: 'Task accepted successfully' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err);
+        res.status(500).send('Error accepting task');
+    } finally {
+        client.release();
+    }
+});
+
+// Return task
+app.post('/finance/tasks/:taskId/return', async (req, res) => {
+    const { taskId } = req.params;
+    const { userId, comment } = req.body;
+
+    const client = await pool.connect();
+
+    try {
+        if (!comment || !String(comment).trim()) {
+            return res.status(400).send('Comment is required for return');
+        }
+
+        await client.query('BEGIN');
+
+        const task = await getOpenFinanceTaskForUpdate(client, taskId);
+
+        if (!task) {
+            await client.query('ROLLBACK');
+            return res.status(404).send('Task not found');
+        }
+
+        if (task.status === 'COMPLETED') {
+            await client.query('ROLLBACK');
+            return res.status(400).send('Task is already completed');
+        }
+
+        if (task.assigned_user_id && Number(task.assigned_user_id) !== Number(userId)) {
+            await client.query('ROLLBACK');
+            return res.status(403).send('Task is assigned to another user');
+        }
+
+        await client.query(
+            `UPDATE finance_tasks
+             SET assigned_user_id = COALESCE(assigned_user_id, $1),
+                 status = 'COMPLETED',
+                 outcome = 'RETURNED',
+                 updated_at = NOW(),
+                 completed_at = NOW()
+             WHERE id = $2`,
+            [userId, taskId]
+        );
+
+        await client.query(
+            `UPDATE claims
+             SET status = 'RETURNED',
+                 assigned_finance_user_id = COALESCE(assigned_finance_user_id, $1),
+                 decision_by = $1,
+                 decision_at = NOW(),
+                 decision_comment = $2
+             WHERE id = $3`,
+            [userId, comment, task.claim_id]
+        );
+
+        await client.query(
+            `INSERT INTO finance_task_history (finance_task_id, action, action_by, comment)
+             VALUES ($1, $2, $3, $4)`,
+            [taskId, 'RETURNED', userId, comment]
+        );
+
+        await client.query('COMMIT');
+
+        res.json({ message: 'Task returned successfully' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err);
+        res.status(500).send('Error returning task');
+    } finally {
+        client.release();
+    }
+});
+
+// Reject task
+app.post('/finance/tasks/:taskId/reject', async (req, res) => {
+    const { taskId } = req.params;
+    const { userId, comment } = req.body;
+
+    const client = await pool.connect();
+
+    try {
+        if (!comment || !String(comment).trim()) {
+            return res.status(400).send('Comment is required for reject');
+        }
+
+        await client.query('BEGIN');
+
+        const task = await getOpenFinanceTaskForUpdate(client, taskId);
+
+        if (!task) {
+            await client.query('ROLLBACK');
+            return res.status(404).send('Task not found');
+        }
+
+        if (task.status === 'COMPLETED') {
+            await client.query('ROLLBACK');
+            return res.status(400).send('Task is already completed');
+        }
+
+        if (task.assigned_user_id && Number(task.assigned_user_id) !== Number(userId)) {
+            await client.query('ROLLBACK');
+            return res.status(403).send('Task is assigned to another user');
+        }
+
+        await client.query(
+            `UPDATE finance_tasks
+             SET assigned_user_id = COALESCE(assigned_user_id, $1),
+                 status = 'COMPLETED',
+                 outcome = 'REJECTED',
+                 updated_at = NOW(),
+                 completed_at = NOW()
+             WHERE id = $2`,
+            [userId, taskId]
+        );
+
+        await client.query(
+            `UPDATE claims
+             SET status = 'REJECTED',
+                 assigned_finance_user_id = COALESCE(assigned_finance_user_id, $1),
+                 decision_by = $1,
+                 decision_at = NOW(),
+                 decision_comment = $2
+             WHERE id = $3`,
+            [userId, comment, task.claim_id]
+        );
+
+        await client.query(
+            `INSERT INTO finance_task_history (finance_task_id, action, action_by, comment)
+             VALUES ($1, $2, $3, $4)`,
+            [taskId, 'REJECTED', userId, comment]
+        );
+
+        await client.query('COMMIT');
+
+        res.json({ message: 'Task rejected successfully' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err);
+        res.status(500).send('Error rejecting task');
+    } finally {
+        client.release();
+    }
+});
+
+// Resubmit claim (reuse same finance task)
+app.post('/claims/:id/resubmit', async (req, res) => {
+    const { id } = req.params;
+    const { userId } = req.body;
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const claimResult = await client.query(
+            `SELECT * FROM claims WHERE id = $1 FOR UPDATE`,
+            [id]
+        );
+
+        if (claimResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).send('Claim not found');
+        }
+
+        const claim = claimResult.rows[0];
+
+        if (claim.status !== 'RETURNED') {
+            await client.query('ROLLBACK');
+            return res.status(400).send('Only RETURNED claims can be resubmitted');
+        }
+
+        const taskResult = await client.query(
+            `SELECT *
+             FROM finance_tasks
+             WHERE claim_id = $1
+             ORDER BY id DESC
+             LIMIT 1
+             FOR UPDATE`,
+            [id]
+        );
+
+        if (taskResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).send('No finance task found');
+        }
+
+        const task = taskResult.rows[0];
+
+        const updatedClaimResult = await client.query(
+            `UPDATE claims
+             SET status = 'SUBMITTED',
+                 resubmission_count = COALESCE(resubmission_count, 0) + 1,
+                 decision_by = NULL,
+                 decision_at = NULL,
+                 decision_comment = NULL,
+                 assigned_finance_user_id = NULL
+             WHERE id = $1
+             RETURNING *`,
+            [id]
+        );
+
+        const updatedClaim = updatedClaimResult.rows[0];
+
+        await client.query(
+            `UPDATE finance_tasks
+             SET status = 'PENDING',
+                 assigned_user_id = NULL,
+                 outcome = NULL,
+                 completed_at = NULL,
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [task.id]
+        );
+
+        await client.query(
+            `INSERT INTO finance_task_history (finance_task_id, action, action_by, comment)
+             VALUES ($1, $2, $3, $4)`,
+            [task.id, 'RESUBMITTED', userId, 'Claim resubmitted by requestor']
+        );
+
+        await client.query('COMMIT');
+
+        res.json({
+            message: 'Claim resubmitted successfully (task reused)',
+            claim: updatedClaim,
+            financeTaskId: task.id,
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err);
+        res.status(500).send('Error resubmitting claim');
     } finally {
         client.release();
     }
