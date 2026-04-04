@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
-type CurrentUser = {
+export type CurrentUser = {
   id: number;
   fullName: string;
   email: string;
@@ -9,52 +9,61 @@ type CurrentUser = {
 };
 
 type UserContextType = {
-  currentUser: CurrentUser;
-  setCurrentUser: (user: CurrentUser) => void;
-  demoUsers: CurrentUser[];
+  currentUser: CurrentUser | null;
+  setCurrentUser: (user: CurrentUser | null) => void;
+  login: (user: CurrentUser) => void;
+  logout: () => void;
+  isAuthenticated: boolean;
 };
 
-const demoUsers: CurrentUser[] = [
-  {
-    id: 1,
-    fullName: 'Requestor Demo User',
-    email: 'requestor@example.com',
-    roleCode: 'REQUESTOR',
-    regionCode: 'RUH',
-  },
-  {
-    id: 2,
-    fullName: 'Finance Member Riyadh',
-    email: 'finance.member.ruh@example.com',
-    roleCode: 'FINANCE_MEMBER',
-    regionCode: 'RUH',
-  },
-  {
-    id: 3,
-    fullName: 'Finance Supervisor Riyadh',
-    email: 'finance.supervisor.ruh@example.com',
-    roleCode: 'FINANCE_SUPERVISOR',
-    regionCode: 'RUH',
-  },
-  {
-    id: 4,
-    fullName: 'Admin User',
-    email: 'admin@example.com',
-    roleCode: 'ADMIN',
-    regionCode: 'RUH',
-  },
-];
+const STORAGE_KEY = 'motor_claims_current_user';
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<CurrentUser>(demoUsers[0]);
+  const [currentUser, setCurrentUserState] = useState<CurrentUser | null>(null);
+
+  useEffect(() => {
+    try {
+      const storedUser = localStorage.getItem(STORAGE_KEY);
+      if (storedUser) {
+        setCurrentUserState(JSON.parse(storedUser));
+      }
+    } catch (error) {
+      console.error('Failed to load user from storage:', error);
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, []);
+
+  const setCurrentUser = (user: CurrentUser | null) => {
+    setCurrentUserState(user);
+
+    try {
+      if (user) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    } catch (error) {
+      console.error('Failed to save user to storage:', error);
+    }
+  };
+
+  const login = (user: CurrentUser) => {
+    setCurrentUser(user);
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+  };
 
   const value = useMemo(
     () => ({
       currentUser,
       setCurrentUser,
-      demoUsers,
+      login,
+      logout,
+      isAuthenticated: !!currentUser,
     }),
     [currentUser]
   );

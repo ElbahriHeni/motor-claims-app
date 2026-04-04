@@ -1,47 +1,45 @@
 import { useUserContext } from '../context/UserContext';
+import { Button } from './ui/button';
+import { LogOut, User } from 'lucide-react';
 
 export default function UserSwitcher() {
-  const { currentUser, setCurrentUser, demoUsers } = useUserContext();
+  const { currentUser, logout } = useUserContext();
+
+  if (!currentUser) return null;
 
   return (
     <div className="border-b border-slate-200 bg-white shadow-sm">
-      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Current User
-          </p>
-          <p className="text-sm text-slate-700">
-            {currentUser.fullName} ({currentUser.roleCode})
-          </p>
+      <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
+
+        {/* LEFT: User Info */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+            <User className="w-5 h-5 text-slate-600" />
+          </div>
+
+          <div>
+            <p className="text-sm font-medium text-slate-900">
+              {currentUser.fullName}
+            </p>
+            <p className="text-xs text-slate-500">
+              {currentUser.roleCode} • Region: {currentUser.regionCode || '-'}
+            </p>
+          </div>
         </div>
 
-        <div className="flex min-w-[280px] flex-col gap-1">
-          <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Switch User
-          </label>
-          <select
-            value={currentUser.id}
-            onChange={(e) => {
-              const selected = demoUsers.find(
-                (user) => user.id === Number(e.target.value)
-              );
-              if (selected) {
-                setCurrentUser(selected);
-              }
-            }}
-            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+        {/* RIGHT: Logout */}
+        <div>
+          <Button
+            variant="outline"
+            onClick={logout}
+            className="flex items-center gap-2"
           >
-            {demoUsers.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.fullName} ({user.roleCode})
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-slate-500">
-            Region: {currentUser.regionCode || '-'}
-          </p>
+            <LogOut className="w-4 h-4" />
+            Logout
+          </Button>
         </div>
+
       </div>
     </div>
   );
-}   
+}
