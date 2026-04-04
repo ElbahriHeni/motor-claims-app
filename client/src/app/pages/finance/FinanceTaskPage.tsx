@@ -8,27 +8,117 @@ import { API_URL } from '../../config';
 export default function FinanceTaskPage() {
   const { taskId } = useParams();
   const [taskData, setTaskData] = useState<any>(null);
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+
+  const loadTask = async () => {
+    try {
+      const res = await fetch(`${API_URL}/finance/tasks/${taskId}`);
+      const data = await res.json();
+      console.log('TASK DATA:', data);
+      setTaskData(data);
+    } catch (error) {
+      console.error('Error loading task:', error);
+      alert('Could not load task data.');
+    }
+  };
 
   useEffect(() => {
-    fetch(`${API_URL}/finance/tasks/${taskId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        console.log('TASK DATA:', data);
-        setTaskData(data);
-      });
+    loadTask();
   }, [taskId]);
 
-  const action = async (type: string) => {
-    await fetch(`${API_URL}/finance/tasks/${taskId}/${type}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: 1,
-        comment: 'Test action',
-      }),
-    });
+  const getActionPayload = (type: string) => {
+    if (type === 'claim') {
+      const confirmed = window.confirm('Are you sure you want to claim this task?');
+      if (!confirmed) return null;
 
-    alert(type + ' done');
+      return {
+        userId: 1,
+        comment: 'Task claimed by finance user',
+      };
+    }
+
+    if (type === 'release') {
+      const confirmed = window.confirm('Are you sure you want to release this task back to the queue?');
+      if (!confirmed) return null;
+
+      return {
+        userId: 1,
+        comment: 'Task released back to queue',
+      };
+    }
+
+    if (type === 'accept') {
+      const confirmed = window.confirm('Are you sure you want to accept this claim?');
+      if (!confirmed) return null;
+
+      const comment = window.prompt('Optional comment for acceptance:', 'Finance approved') || '';
+
+      return {
+        userId: 1,
+        comment,
+      };
+    }
+
+    if (type === 'return') {
+      const comment = window.prompt('Return reason is required. Please enter the reason:');
+      if (!comment || !comment.trim()) {
+        alert('Return reason is required.');
+        return null;
+      }
+
+      const confirmed = window.confirm('Are you sure you want to return this claim?');
+      if (!confirmed) return null;
+
+      return {
+        userId: 1,
+        comment: comment.trim(),
+      };
+    }
+
+    if (type === 'reject') {
+      const comment = window.prompt('Rejection reason is required. Please enter the reason:');
+      if (!comment || !comment.trim()) {
+        alert('Rejection reason is required.');
+        return null;
+      }
+
+      const confirmed = window.confirm('Are you sure you want to reject this claim?');
+      if (!confirmed) return null;
+
+      return {
+        userId: 1,
+        comment: comment.trim(),
+      };
+    }
+
+    return null;
+  };
+
+  const action = async (type: string) => {
+    const payload = getActionPayload(type);
+    if (!payload) return;
+
+    try {
+      setLoadingAction(type);
+
+      const res = await fetch(`${API_URL}/finance/tasks/${taskId}/${type}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to ${type} task`);
+      }
+
+      await loadTask();
+      alert(`${type} completed successfully`);
+    } catch (error) {
+      console.error(`Error during ${type}:`, error);
+      alert(`Could not ${type} this task.`);
+    } finally {
+      setLoadingAction(null);
+    }
   };
 
   if (!taskData) return <div className="p-6">Loading...</div>;
@@ -53,9 +143,7 @@ export default function FinanceTaskPage() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* LEFT SIDE */}
       <div className="lg:col-span-2 space-y-6">
-        {/* TASK HEADER */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">
@@ -85,7 +173,6 @@ export default function FinanceTaskPage() {
           </CardContent>
         </Card>
 
-        {/* CLAIM INFO */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">
@@ -124,7 +211,6 @@ export default function FinanceTaskPage() {
           </CardContent>
         </Card>
 
-        {/* CUSTOMER */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">
@@ -154,7 +240,6 @@ export default function FinanceTaskPage() {
           </CardContent>
         </Card>
 
-        {/* HISTORY */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">History</CardTitle>
@@ -188,9 +273,7 @@ export default function FinanceTaskPage() {
         </Card>
       </div>
 
-      {/* RIGHT SIDE */}
       <div className="space-y-6">
-        {/* STATUS PANEL */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">Task Status</CardTitle>
@@ -218,7 +301,6 @@ export default function FinanceTaskPage() {
           </CardContent>
         </Card>
 
-        {/* ACTIONS PANEL */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">Actions</CardTitle>
@@ -226,45 +308,45 @@ export default function FinanceTaskPage() {
           <CardContent className="space-y-3">
             <Button
               onClick={() => action('claim')}
-              disabled={!isPending}
+              disabled={!isPending || loadingAction !== null}
               className="w-full"
             >
-              Claim
+              {loadingAction === 'claim' ? 'Processing...' : 'Claim'}
             </Button>
 
             <Button
               onClick={() => action('release')}
-              disabled={!isAssigned || isCompleted}
+              disabled={!isAssigned || isCompleted || loadingAction !== null}
               variant="outline"
               className="w-full"
             >
-              Release
+              {loadingAction === 'release' ? 'Processing...' : 'Release'}
             </Button>
 
             <Button
               onClick={() => action('accept')}
-              disabled={!isAssigned || isCompleted}
+              disabled={!isAssigned || isCompleted || loadingAction !== null}
               className="w-full"
             >
-              Accept
+              {loadingAction === 'accept' ? 'Processing...' : 'Accept'}
             </Button>
 
             <Button
               onClick={() => action('return')}
-              disabled={!isAssigned || isCompleted}
+              disabled={!isAssigned || isCompleted || loadingAction !== null}
               variant="secondary"
               className="w-full"
             >
-              Return
+              {loadingAction === 'return' ? 'Processing...' : 'Return'}
             </Button>
 
             <Button
               onClick={() => action('reject')}
-              disabled={!isAssigned || isCompleted}
+              disabled={!isAssigned || isCompleted || loadingAction !== null}
               variant="destructive"
               className="w-full"
             >
-              Reject
+              {loadingAction === 'reject' ? 'Processing...' : 'Reject'}
             </Button>
           </CardContent>
         </Card>
