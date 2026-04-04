@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { useClaimContext } from '../context/ClaimContext';
+import { useUserContext } from '../context/UserContext';
 import { ArrowLeft, FileText, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { Separator } from '../components/ui/separator';
 import { API_URL } from '../config';
@@ -10,6 +11,7 @@ import { API_URL } from '../config';
 export default function ReviewPage() {
   const navigate = useNavigate();
   const { claimData, updateClaimData } = useClaimContext();
+  const { currentUser } = useUserContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
@@ -25,10 +27,15 @@ export default function ReviewPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          regionCode: currentUser.regionCode || 'RUH',
+        }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to submit claim');
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to submit claim');
       }
 
       const submittedClaim = await response.json();
@@ -39,9 +46,9 @@ export default function ReviewPage() {
       });
 
       navigate('/claim/success');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting claim:', error);
-      alert('Could not submit claim. Please try again.');
+      alert(error?.message || 'Could not submit claim. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -65,6 +72,7 @@ export default function ReviewPage() {
             Please review all information before submitting your claim
           </CardDescription>
         </CardHeader>
+
         <CardContent className="space-y-6">
           <div>
             <h3 className="font-medium text-slate-900 mb-3">Personal Information</h3>
@@ -159,7 +167,10 @@ export default function ReviewPage() {
                 </div>
                 <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
                   {claimData.photos.map((photo, index) => (
-                    <div key={index} className="aspect-square bg-slate-100 rounded-lg overflow-hidden border border-slate-200">
+                    <div
+                      key={index}
+                      className="aspect-square bg-slate-100 rounded-lg overflow-hidden border border-slate-200"
+                    >
                       <img
                         src={URL.createObjectURL(photo)}
                         alt={`Photo ${index + 1}`}
@@ -179,7 +190,10 @@ export default function ReviewPage() {
                 </div>
                 <div className="space-y-2">
                   {claimData.documents.map((doc, index) => (
-                    <div key={index} className="flex items-center gap-2 text-sm p-2 bg-slate-50 rounded-lg">
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 text-sm p-2 bg-slate-50 rounded-lg"
+                    >
                       <FileText className="w-4 h-4 text-slate-600" />
                       <span className="truncate">{doc.name}</span>
                     </div>
@@ -189,7 +203,7 @@ export default function ReviewPage() {
             ) : null}
 
             {(!claimData.photos || claimData.photos.length === 0) &&
-             (!claimData.documents || claimData.documents.length === 0) ? (
+            (!claimData.documents || claimData.documents.length === 0) ? (
               <p className="text-sm text-slate-500">No files uploaded.</p>
             ) : null}
           </div>
@@ -212,6 +226,7 @@ export default function ReviewPage() {
               <ArrowLeft className="w-4 h-4" />
               Back
             </Button>
+
             <Button
               onClick={handleSubmit}
               className="flex-1"
