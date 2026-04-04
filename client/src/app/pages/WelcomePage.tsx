@@ -4,11 +4,13 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Car, FileText, Upload, CheckCircle } from 'lucide-react';
 import { useClaimContext } from '../context/ClaimContext';
+import { useUserContext } from '../context/UserContext';
 import { API_URL } from '../config';
 
 export default function WelcomePage() {
   const navigate = useNavigate();
   const { updateClaimData, resetClaimData } = useClaimContext();
+  const { currentUser } = useUserContext();
   const [isStarting, setIsStarting] = useState(false);
 
   const steps = [
@@ -45,10 +47,14 @@ export default function WelcomePage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          userId: currentUser.id,
+        }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create claim');
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to create claim');
       }
 
       const data = await response.json();
@@ -60,9 +66,9 @@ export default function WelcomePage() {
       });
 
       navigate('/claim/details');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating claim:', error);
-      alert('Could not start claim. Please try again.');
+      alert(error?.message || 'Could not start claim. Please try again.');
     } finally {
       setIsStarting(false);
     }
@@ -80,6 +86,7 @@ export default function WelcomePage() {
             We&apos;re here to help you through the claims process. Follow the steps below to submit your motor claim.
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <div className="grid md:grid-cols-2 gap-4 mb-6">
             {steps.map((step, index) => {
@@ -99,7 +106,7 @@ export default function WelcomePage() {
               );
             })}
           </div>
-          
+
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
             <h4 className="font-medium text-blue-900 mb-2">Before you start, have ready:</h4>
             <ul className="text-sm text-blue-800 space-y-1">
@@ -123,4 +130,4 @@ export default function WelcomePage() {
       </Card>
     </div>
   );
-} 
+}
