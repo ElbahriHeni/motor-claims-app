@@ -1,8 +1,14 @@
 import { RouterProvider } from 'react-router';
 import { router } from './routes';
+import UserSwitcher from './components/UserSwitcher';
 
 function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <UserSwitcher />
+      <RouterProvider router={router} />
+    </>
+  );
 }
 
 export default App;
