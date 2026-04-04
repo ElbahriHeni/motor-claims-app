@@ -3,13 +3,14 @@ import { useParams } from 'react-router';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
+import { API_URL } from '../../config';
 
 export default function FinanceTaskPage() {
   const { taskId } = useParams();
   const [taskData, setTaskData] = useState<any>(null);
 
   useEffect(() => {
-    fetch(`http://localhost:5000/finance/tasks/${taskId}`)
+    fetch(`${API_URL}/finance/tasks/${taskId}`)
       .then((res) => res.json())
       .then((data) => {
         console.log('TASK DATA:', data);
@@ -18,7 +19,7 @@ export default function FinanceTaskPage() {
   }, [taskId]);
 
   const action = async (type: string) => {
-    await fetch(`http://localhost:5000/finance/tasks/${taskId}/${type}`, {
+    await fetch(`${API_URL}/finance/tasks/${taskId}/${type}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

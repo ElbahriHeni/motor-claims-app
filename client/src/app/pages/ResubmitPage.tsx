@@ -1,11 +1,12 @@
 import { useParams, useNavigate } from 'react-router';
+import { API_URL } from '../config';
 
 export default function ResubmitPage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
   const handleResubmit = async () => {
-    await fetch(`http://localhost:5000/claims/${id}/resubmit`, {
+    await fetch(`${API_URL}/claims/${id}/resubmit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: 1 }),

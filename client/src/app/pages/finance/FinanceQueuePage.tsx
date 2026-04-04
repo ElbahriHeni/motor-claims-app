@@ -4,13 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { ClipboardList } from 'lucide-react';
+import { API_URL } from '../../config';
 
 export default function FinanceQueuePage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch('http://localhost:5000/finance/tasks')
+    fetch(`${API_URL}/finance/tasks`)
       .then(res => res.json())
       .then(data => setTasks(data));
   }, []);

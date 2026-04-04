@@ -4,13 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { FileText, RefreshCcw } from 'lucide-react';
+import { API_URL } from '../config';
 
 export default function MyClaimsPage() {
   const [claims, setClaims] = useState<any[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch('http://localhost:5000/claims')
+    fetch(`${API_URL}/claims`)
       .then((res) => res.json())
       .then((data) => setClaims(data));
   }, []);
