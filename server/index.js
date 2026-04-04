@@ -153,7 +153,7 @@ async function getOpenFinanceTaskForUpdate(client, taskId) {
     return result.rows[0] || null;
 }
 
-// ✅ NEW: authorization helpers using users + roles tables
+// authorization helpers using users + roles tables
 async function getUserWithRole(client, userId) {
     const result = await client.query(
         `SELECT
@@ -230,10 +230,18 @@ app.get('/claims', async (req, res) => {
 
 // Create new claim
 app.post('/claims', async (req, res) => {
+    const { userId } = req.body || {};
+    const client = await pool.connect();
+
     try {
+        const auth = await requireRequestorUser(client, userId);
+        if (!auth.ok) {
+            return res.status(auth.status).send(auth.message);
+        }
+
         const referenceNumber = generateReferenceNumber();
 
-        const result = await pool.query(
+        const result = await client.query(
             'INSERT INTO claims (reference_number, status) VALUES ($1, $2) RETURNING *',
             [referenceNumber, 'DRAFT']
         );
@@ -242,6 +250,8 @@ app.post('/claims', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).send('Error creating claim');
+    } finally {
+        client.release();
     }
 });
 
@@ -387,12 +397,18 @@ app.put('/claims/:id/documents', async (req, res) => {
 // Submit claim and create finance task
 app.put('/claims/:id/submit', async (req, res) => {
     const { id } = req.params;
-    const { regionCode = 'RUH' } = req.body || {};
+    const { regionCode = 'RUH', userId } = req.body || {};
 
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
+
+        const auth = await requireRequestorUser(client, userId);
+        if (!auth.ok) {
+            await client.query('ROLLBACK');
+            return res.status(auth.status).send(auth.message);
+        }
 
         const claimCheck = await client.query(
             'SELECT * FROM claims WHERE id = $1 FOR UPDATE',
@@ -427,7 +443,7 @@ app.put('/claims/:id/submit', async (req, res) => {
             return res.status(400).json({ message: 'Invalid or inactive region code' });
         }
 
-        const submittedBy = await getDefaultRequestorUserId(client);
+        const submittedBy = userId || await getDefaultRequestorUserId(client);
 
         const claimResult = await client.query(
             `UPDATE claims
