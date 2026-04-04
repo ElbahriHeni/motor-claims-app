@@ -4,15 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { API_URL } from '../../config';
+import { useUserContext } from '../../context/UserContext';
 
 type ActionType = 'claim' | 'release' | 'accept' | 'return' | 'reject' | null;
 
 export default function FinanceTaskPage() {
   const { taskId } = useParams();
+  const { currentUser } = useUserContext();
+
   const [taskData, setTaskData] = useState<any>(null);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
-  // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [actionType, setActionType] = useState<ActionType>(null);
   const [comment, setComment] = useState('');
@@ -36,13 +38,12 @@ export default function FinanceTaskPage() {
   const openActionModal = (type: Exclude<ActionType, null>) => {
     setActionType(type);
 
-    // sensible defaults
     if (type === 'accept') {
-      setComment('Finance approved');
+      setComment(`Accepted by ${currentUser.fullName}`);
     } else if (type === 'claim') {
-      setComment('Task claimed by finance user');
+      setComment(`Task claimed by ${currentUser.fullName}`);
     } else if (type === 'release') {
-      setComment('Task released back to queue');
+      setComment(`Task released by ${currentUser.fullName}`);
     } else {
       setComment('');
     }
@@ -77,7 +78,7 @@ export default function FinanceTaskPage() {
   const getActionDescription = () => {
     switch (actionType) {
       case 'claim':
-        return 'This task will be assigned to you for processing.';
+        return `This task will be assigned to ${currentUser.fullName} for processing.`;
       case 'release':
         return 'This task will be released back to the finance queue.';
       case 'accept':
@@ -108,9 +109,9 @@ export default function FinanceTaskPage() {
     let finalComment = comment.trim();
 
     if (!finalComment) {
-      if (actionType === 'claim') finalComment = 'Task claimed by finance user';
-      if (actionType === 'release') finalComment = 'Task released back to queue';
-      if (actionType === 'accept') finalComment = 'Finance approved';
+      if (actionType === 'claim') finalComment = `Task claimed by ${currentUser.fullName}`;
+      if (actionType === 'release') finalComment = `Task released by ${currentUser.fullName}`;
+      if (actionType === 'accept') finalComment = `Accepted by ${currentUser.fullName}`;
     }
 
     try {
@@ -120,20 +121,21 @@ export default function FinanceTaskPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: 1,
+          userId: currentUser.id,
           comment: finalComment,
         }),
       });
 
       if (!res.ok) {
-        throw new Error(`Failed to ${actionType} task`);
+        const errorText = await res.text();
+        throw new Error(errorText || `Failed to ${actionType} task`);
       }
 
       await loadTask();
       closeActionModal();
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error during ${actionType}:`, error);
-      alert(`Could not ${actionType} this task.`);
+      alert(error?.message || `Could not ${actionType} this task.`);
     } finally {
       setLoadingAction(null);
     }
