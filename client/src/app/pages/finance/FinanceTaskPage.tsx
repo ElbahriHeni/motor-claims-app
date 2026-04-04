@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { API_URL } from '../../config';
 import { useUserContext } from '../../context/UserContext';
+import { ShieldAlert } from 'lucide-react';
 
 type ActionType = 'claim' | 'release' | 'accept' | 'return' | 'reject' | null;
 
@@ -19,6 +20,11 @@ export default function FinanceTaskPage() {
   const [actionType, setActionType] = useState<ActionType>(null);
   const [comment, setComment] = useState('');
 
+  const isFinanceUser =
+    currentUser.roleCode === 'FINANCE_MEMBER' ||
+    currentUser.roleCode === 'FINANCE_SUPERVISOR' ||
+    currentUser.roleCode === 'ADMIN';
+
   const loadTask = async () => {
     try {
       const res = await fetch(`${API_URL}/finance/tasks/${taskId}`);
@@ -32,8 +38,9 @@ export default function FinanceTaskPage() {
   };
 
   useEffect(() => {
+    if (!isFinanceUser) return;
     loadTask();
-  }, [taskId]);
+  }, [taskId, isFinanceUser]);
 
   const openActionModal = (type: Exclude<ActionType, null>) => {
     setActionType(type);
@@ -140,6 +147,39 @@ export default function FinanceTaskPage() {
       setLoadingAction(null);
     }
   };
+
+  if (!isFinanceUser) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Finance Task Details</CardTitle>
+          </CardHeader>
+
+          <CardContent>
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-6">
+              <div className="flex items-start gap-3">
+                <ShieldAlert className="mt-0.5 h-5 w-5 text-amber-600" />
+                <div>
+                  <p className="font-semibold text-amber-800">
+                    Access Restricted
+                  </p>
+                  <p className="mt-1 text-sm text-amber-700">
+                    You are currently signed in as{' '}
+                    <span className="font-medium">{currentUser.fullName}</span> (
+                    {currentUser.roleCode}).
+                  </p>
+                  <p className="mt-2 text-sm text-amber-700">
+                    Only finance users can access finance task details.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!taskData) return <div className="p-6">Loading...</div>;
 
