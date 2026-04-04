@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 require('dotenv').config();
 
 const express = require('express');
@@ -17,6 +18,10 @@ const pool = new Pool({
 
 function generateReferenceNumber() {
     return 'CLM-' + Math.random().toString(36).substring(2, 11).toUpperCase();
+}
+
+function hashPassword(password) {
+    return crypto.createHash('sha256').update(password).digest('hex');
 }
 
 async function getDefaultRequestorUserId(client) {
@@ -215,6 +220,69 @@ async function requireRequestorUser(client, userId) {
 // Test route
 app.get('/', (req, res) => {
     res.send('Motor Claims API running');
+});
+
+// Auth login
+app.post('/auth/login', async (req, res) => {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
+        return res.status(400).send('Email and password are required');
+    }
+
+    const client = await pool.connect();
+
+    try {
+        const result = await client.query(
+            `SELECT
+                u.id,
+                u.full_name,
+                u.email,
+                u.password_hash,
+                u.is_active,
+                r.code AS role_code,
+                r.name AS role_name,
+                rg.code AS region_code,
+                rg.name AS region_name
+             FROM users u
+             JOIN roles r ON r.id = u.role_id
+             LEFT JOIN regions rg ON rg.id = u.region_id
+             WHERE LOWER(u.email) = LOWER($1)
+             LIMIT 1`,
+            [email]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(401).send('Invalid email or password');
+        }
+
+        const user = result.rows[0];
+
+        if (!user.is_active) {
+            return res.status(403).send('User account is inactive');
+        }
+
+        const hashedInput = hashPassword(password);
+
+        if (hashedInput !== user.password_hash) {
+            return res.status(401).send('Invalid email or password');
+        }
+
+        return res.json({
+            id: user.id,
+            fullName: user.full_name,
+            email: user.email,
+            roleCode: user.role_code,
+            roleName: user.role_name,
+            regionCode: user.region_code || null,
+            regionName: user.region_name || null,
+        });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).send('Error during login');
+    } finally {
+        client.release();
+    }
 });
 
 // Get claims
