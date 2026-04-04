@@ -52,7 +52,7 @@ export default function MyClaimsPage() {
       }
 
       const data = await response.json();
-      navigate(`/claim/details?claimId=${data.id}`);
+      navigate(`/claim/start?claimId=${data.id}`);
     } catch (error: any) {
       console.error('Error creating claim:', error);
       alert(error?.message || 'Could not create claim.');
