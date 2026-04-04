@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Badge } from '../components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
+import { Button } from './components/ui/button';
+import { Badge } from './components/ui/badge';
 import { FileText, RefreshCcw, ShieldAlert, Plus } from 'lucide-react';
-import { API_URL } from '../config';
-import { useUserContext } from '../context/UserContext';
+import { API_URL } from './config';
+import { useUserContext } from './context/UserContext';
 
 export default function MyClaimsPage() {
   const [claims, setClaims] = useState<any[]>([]);
