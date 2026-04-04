@@ -153,6 +153,65 @@ async function getOpenFinanceTaskForUpdate(client, taskId) {
     return result.rows[0] || null;
 }
 
+// ✅ NEW: authorization helpers using users + roles tables
+async function getUserWithRole(client, userId) {
+    const result = await client.query(
+        `SELECT
+            u.*,
+            r.code AS role_code,
+            r.name AS role_name
+         FROM users u
+         JOIN roles r ON r.id = u.role_id
+         WHERE u.id = $1
+           AND u.is_active = TRUE`,
+        [userId]
+    );
+
+    return result.rows[0] || null;
+}
+
+async function requireFinanceUser(client, userId) {
+    const user = await getUserWithRole(client, userId);
+
+    if (!user) {
+        return { ok: false, status: 404, message: 'User not found' };
+    }
+
+    if (!['FINANCE_MEMBER', 'FINANCE_SUPERVISOR', 'ADMIN'].includes(user.role_code)) {
+        return { ok: false, status: 403, message: 'User not authorized for finance actions' };
+    }
+
+    return { ok: true, user };
+}
+
+async function requireSupervisorUser(client, userId) {
+    const user = await getUserWithRole(client, userId);
+
+    if (!user) {
+        return { ok: false, status: 404, message: 'User not found' };
+    }
+
+    if (!['FINANCE_SUPERVISOR', 'ADMIN'].includes(user.role_code)) {
+        return { ok: false, status: 403, message: 'User not authorized to assign tasks' };
+    }
+
+    return { ok: true, user };
+}
+
+async function requireRequestorUser(client, userId) {
+    const user = await getUserWithRole(client, userId);
+
+    if (!user) {
+        return { ok: false, status: 404, message: 'User not found' };
+    }
+
+    if (!['REQUESTOR', 'ADMIN'].includes(user.role_code)) {
+        return { ok: false, status: 403, message: 'User not authorized for requestor actions' };
+    }
+
+    return { ok: true, user };
+}
+
 // Test route
 app.get('/', (req, res) => {
     res.send('Motor Claims API running');
@@ -551,6 +610,11 @@ app.post('/finance/tasks/:taskId/claim', async (req, res) => {
     const client = await pool.connect();
 
     try {
+        const auth = await requireFinanceUser(client, userId);
+        if (!auth.ok) {
+            return res.status(auth.status).send(auth.message);
+        }
+
         await client.query('BEGIN');
 
         const task = await getOpenFinanceTaskForUpdate(client, taskId);
@@ -612,6 +676,11 @@ app.post('/finance/tasks/:taskId/release', async (req, res) => {
     const client = await pool.connect();
 
     try {
+        const auth = await requireFinanceUser(client, userId);
+        if (!auth.ok) {
+            return res.status(auth.status).send(auth.message);
+        }
+
         await client.query('BEGIN');
 
         const task = await getOpenFinanceTaskForUpdate(client, taskId);
@@ -673,6 +742,16 @@ app.post('/finance/tasks/:taskId/assign', async (req, res) => {
     const client = await pool.connect();
 
     try {
+        const auth = await requireSupervisorUser(client, userId);
+        if (!auth.ok) {
+            return res.status(auth.status).send(auth.message);
+        }
+
+        const assigneeAuth = await requireFinanceUser(client, assignedUserId);
+        if (!assigneeAuth.ok) {
+            return res.status(400).send('Assigned user must be an authorized finance user');
+        }
+
         await client.query('BEGIN');
 
         const task = await getOpenFinanceTaskForUpdate(client, taskId);
@@ -729,6 +808,11 @@ app.post('/finance/tasks/:taskId/accept', async (req, res) => {
     const client = await pool.connect();
 
     try {
+        const auth = await requireFinanceUser(client, userId);
+        if (!auth.ok) {
+            return res.status(auth.status).send(auth.message);
+        }
+
         await client.query('BEGIN');
 
         const task = await getOpenFinanceTaskForUpdate(client, taskId);
@@ -796,6 +880,11 @@ app.post('/finance/tasks/:taskId/return', async (req, res) => {
     const client = await pool.connect();
 
     try {
+        const auth = await requireFinanceUser(client, userId);
+        if (!auth.ok) {
+            return res.status(auth.status).send(auth.message);
+        }
+
         if (!comment || !String(comment).trim()) {
             return res.status(400).send('Comment is required for return');
         }
@@ -867,6 +956,11 @@ app.post('/finance/tasks/:taskId/reject', async (req, res) => {
     const client = await pool.connect();
 
     try {
+        const auth = await requireFinanceUser(client, userId);
+        if (!auth.ok) {
+            return res.status(auth.status).send(auth.message);
+        }
+
         if (!comment || !String(comment).trim()) {
             return res.status(400).send('Comment is required for reject');
         }
@@ -938,6 +1032,11 @@ app.post('/claims/:id/resubmit', async (req, res) => {
     const client = await pool.connect();
 
     try {
+        const auth = await requireRequestorUser(client, userId);
+        if (!auth.ok) {
+            return res.status(auth.status).send(auth.message);
+        }
+
         await client.query('BEGIN');
 
         const claimResult = await client.query(
