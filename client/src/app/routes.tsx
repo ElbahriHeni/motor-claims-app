@@ -1,4 +1,5 @@
-import { createBrowserRouter } from 'react-router';
+import React from 'react';
+import { createBrowserRouter, Navigate } from 'react-router';
 import { ClaimLayout } from './components/ClaimLayout';
 
 import WelcomePage from './pages/WelcomePage';
@@ -8,13 +9,42 @@ import UploadDocumentsPage from './pages/UploadDocumentsPage';
 import ReviewPage from './pages/ReviewPage';
 import SuccessPage from './pages/SuccessPage';
 
-// ✅ Finance
 import FinanceQueuePage from './pages/finance/FinanceQueuePage';
 import FinanceTaskPage from './pages/finance/FinanceTaskPage';
 
-// ✅ NEW: Requestor features
 import MyClaimsPage from './pages/MyClaimsPage';
 import ResubmitPage from './pages/ResubmitPage';
+
+import { useUserContext } from './context/UserContext';
+
+function RequireRequestor({ children }: { children: React.ReactNode }) {
+  const { currentUser } = useUserContext();
+
+  const isAllowed =
+    currentUser.roleCode === 'REQUESTOR' ||
+    currentUser.roleCode === 'ADMIN';
+
+  if (!isAllowed) {
+    return <Navigate to="/finance" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function RequireFinance({ children }: { children: React.ReactNode }) {
+  const { currentUser } = useUserContext();
+
+  const isAllowed =
+    currentUser.roleCode === 'FINANCE_MEMBER' ||
+    currentUser.roleCode === 'FINANCE_SUPERVISOR' ||
+    currentUser.roleCode === 'ADMIN';
+
+  if (!isAllowed) {
+    return <Navigate to="/my-claims" replace />;
+  }
+
+  return <>{children}</>;
+}
 
 export const router = createBrowserRouter([
   // ==========================
@@ -22,68 +52,96 @@ export const router = createBrowserRouter([
   // ==========================
   {
     path: '/',
-    element: <ClaimLayout currentStep={0} totalSteps={5} />,
-    children: [
-      { index: true, element: <WelcomePage /> },
-    ],
+    element: (
+      <RequireRequestor>
+        <ClaimLayout currentStep={0} totalSteps={5} />
+      </RequireRequestor>
+    ),
+    children: [{ index: true, element: <WelcomePage /> }],
   },
   {
     path: '/claim/details',
-    element: <ClaimLayout currentStep={1} totalSteps={5} />,
-    children: [
-      { index: true, element: <ClaimDetailsPage /> },
-    ],
+    element: (
+      <RequireRequestor>
+        <ClaimLayout currentStep={1} totalSteps={5} />
+      </RequireRequestor>
+    ),
+    children: [{ index: true, element: <ClaimDetailsPage /> }],
   },
   {
     path: '/claim/vehicle',
-    element: <ClaimLayout currentStep={2} totalSteps={5} />,
-    children: [
-      { index: true, element: <VehicleInfoPage /> },
-    ],
+    element: (
+      <RequireRequestor>
+        <ClaimLayout currentStep={2} totalSteps={5} />
+      </RequireRequestor>
+    ),
+    children: [{ index: true, element: <VehicleInfoPage /> }],
   },
   {
     path: '/claim/upload',
-    element: <ClaimLayout currentStep={3} totalSteps={5} />,
-    children: [
-      { index: true, element: <UploadDocumentsPage /> },
-    ],
+    element: (
+      <RequireRequestor>
+        <ClaimLayout currentStep={3} totalSteps={5} />
+      </RequireRequestor>
+    ),
+    children: [{ index: true, element: <UploadDocumentsPage /> }],
   },
   {
     path: '/claim/review',
-    element: <ClaimLayout currentStep={4} totalSteps={5} />,
-    children: [
-      { index: true, element: <ReviewPage /> },
-    ],
+    element: (
+      <RequireRequestor>
+        <ClaimLayout currentStep={4} totalSteps={5} />
+      </RequireRequestor>
+    ),
+    children: [{ index: true, element: <ReviewPage /> }],
   },
   {
     path: '/claim/success',
-    element: <ClaimLayout currentStep={5} totalSteps={5} />,
-    children: [
-      { index: true, element: <SuccessPage /> },
-    ],
+    element: (
+      <RequireRequestor>
+        <ClaimLayout currentStep={5} totalSteps={5} />
+      </RequireRequestor>
+    ),
+    children: [{ index: true, element: <SuccessPage /> }],
   },
 
   // ==========================
-  // ✅ REQUESTOR - MY CLAIMS
+  // REQUESTOR
   // ==========================
   {
     path: '/my-claims',
-    element: <MyClaimsPage />,
+    element: (
+      <RequireRequestor>
+        <MyClaimsPage />
+      </RequireRequestor>
+    ),
   },
   {
     path: '/resubmit/:id',
-    element: <ResubmitPage />,
+    element: (
+      <RequireRequestor>
+        <ResubmitPage />
+      </RequireRequestor>
+    ),
   },
 
   // ==========================
-  // ✅ FINANCE MODULE
+  // FINANCE
   // ==========================
   {
     path: '/finance',
-    element: <FinanceQueuePage />,
+    element: (
+      <RequireFinance>
+        <FinanceQueuePage />
+      </RequireFinance>
+    ),
   },
   {
     path: '/finance/tasks/:taskId',
-    element: <FinanceTaskPage />,
+    element: (
+      <RequireFinance>
+        <FinanceTaskPage />
+      </RequireFinance>
+    ),
   },
 ]);
